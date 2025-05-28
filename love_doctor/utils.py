@@ -1,6 +1,7 @@
 """
 爬虫抓取的相关通用工具
 """
+import pandas as pd
 from selenium.webdriver import Chrome
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
@@ -30,3 +31,12 @@ def init_chrome(chromedriver_path, download_path, user_path=None, chrome_path=No
     })
     driver = Chrome(service=service, options=options)
     return driver
+
+def read_multi_column(path):
+    """读取两级列名的EXCEL表格"""
+    df = pd.read_excel(path, header=[0, 1])
+    df.columns = [c1 if c2.startswith("Unnamed") else c2 for c1, c2 in df.columns]
+    return df
+
+
+

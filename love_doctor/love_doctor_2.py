@@ -7,19 +7,17 @@ import shutil
 import datetime
 import pandas as pd
 from typing import Dict
-from utils import init_chrome
+from utils import read_multi_column
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 
 
 
-user_folder = r"E:\NewFolder\love_doctor"
+user_folder = os.path.dirname(__file__)
 output_name = "全部设备耗材流向跟踪表.xlsx"
 print("读取设备耗材汇总表")
-input_df = pd.read_excel(os.path.join(user_folder, "设备耗材汇总.xlsx"), header=[0, 1])
-input_df.columns = [c1 if c2.startswith("Unnamed") else c2 for c1, c2 in input_df.columns]
-input_df = input_df.sort_values(by="时间", ascending=True)
+input_df = read_multi_column(os.path.join(user_folder, "设备耗材汇总.xlsx"))
 print("分析输入数据表")
 output_dict: Dict[str, Dict] = {}
 for _, row in input_df.iterrows():
@@ -63,7 +61,8 @@ for key, value in output_dict.items():
     elif each_row[16] > 0 and each_row[-1] <= 0:
         each_row.append("丢失")
     else:
-        each_row.append("异常")
+        each_row.append("未开发")
+    output_list.append(each_row)
 print("构建《全部设备耗材流向跟踪表》")
 output_df = pd.DataFrame(output_list, columns=columns)
 output_df.to_excel(os.path.join(user_folder, output_name), index=False)

@@ -147,3 +147,4 @@ deepLearning/**/*.png
 !requirements.txt
 # 用户自定义的文件
 chromedriver_mac_arm64_114/
+*.xlsx
