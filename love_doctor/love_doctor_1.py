@@ -67,7 +67,7 @@ def crawler_data_from_web(chrome_path, chromedriver_path, download_path, acount,
         if region not in ele.text:
             print("区域有误,选择区域")
             ele.click()
-            pattern = (By.XPATH, f"//ul[@id='select2-region-results']//li[contains(text(), f'{region}')]")
+            pattern = (By.XPATH, f"//ul[@id='select2-region-results']//li[contains(text(), '{region}')]")
             ele = WebDriverWait(driver, 10).until(EC.presence_of_element_located(pattern))
             driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", ele)
             ele = WebDriverWait(driver, 10).until(EC.element_to_be_clickable(pattern))
