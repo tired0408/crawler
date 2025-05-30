@@ -7,10 +7,12 @@ import shutil
 import datetime
 import pandas as pd
 import xlsxwriter
+from copy import deepcopy
+from tqdm import tqdm
 from typing import Dict
 from decimal import Decimal, ROUND_HALF_UP
 from collections import defaultdict
-from utils import read_multi_column
+from utils import read_by_openpyxl
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
@@ -19,7 +21,7 @@ from selenium.webdriver.support import expected_conditions as EC
 
 user_folder = os.path.dirname(__file__)
 print("读取《设备耗材汇总表》")
-input_df = read_multi_column(os.path.join(user_folder, "设备耗材汇总.xlsx"))
+wb, ws, header = read_by_openpyxl(os.path.join(user_folder, "设备耗材汇总.xlsx"))
 """输出数据格式
 -- 区域(dict)
     -- 时间(dict)
@@ -28,10 +30,11 @@ input_df = read_multi_column(os.path.join(user_folder, "设备耗材汇总.xlsx"
 """
 print("分析《设备耗材汇总表》")
 default_dict = {"总家数": 0, "流向覆盖": 0, "有保养的": 0, "保养率≧80%": 0, "保养率≧80%又有耗材产出": 0, "耗材大于1": 0, "耗材同比增长": 0, "耗材环比增长": 0, "同比环比增长": 0}
-output_data: Dict[str, Dict[str, Dict]] = defaultdict(lambda: defaultdict(lambda: default_dict))
+output_data: Dict[str, Dict[str, Dict]] = defaultdict(lambda: defaultdict(lambda: deepcopy(default_dict)))
 now_time = datetime.datetime.now()  
 now_year_str = str(now_time.year)
-for _, row in input_df.iterrows():
+for row_list in tqdm(ws.iter_rows(min_row=3, values_only=True), total=ws.max_row-2, desc="分析中"):
+    row = dict(zip(header, row_list))
     if now_year_str not in row["时间"]: 
         continue
     time_data = output_data[row["归属区域"]][row["时间"]]
@@ -55,6 +58,7 @@ for _, row in input_df.iterrows():
         time_data["耗材环比增长"] += 1
     if consume_year_year > 0 and consume_month_month > 0:
         time_data["同比环比增长"] += 1
+wb.close()
 print("输出《设备耗材家数分析表》")
 wb = xlsxwriter.Workbook(os.path.join(user_folder, "设备耗材家数分析表.xlsx"))
 for region, data1 in output_data.items():
@@ -78,7 +82,7 @@ for region, data1 in output_data.items():
                 ws.write(row_i, 2, f"{ratio_1}%")
                 row_i += 1
                 continue
-            ratio_2 = Decimal(value) / Decimal(data2["流向覆盖"]) * 100
+            ratio_2 = Decimal(value) / Decimal(data2["流向覆盖"]) * 100 if data2["流向覆盖"] > 0 else Decimal(0)
             ratio_2 = ratio_2.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
             ws.write(row_i, 2, f"{ratio_1}%")
             ws.write(row_i, 3, f"{ratio_2}%")
