@@ -75,13 +75,13 @@ for region, data1 in output_data.items():
             ratio_1 = Decimal(value) / Decimal(data2["总家数"]) * 100
             ratio_1 = ratio_1.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
             if label == "流向覆盖":
-                ws.write(row_i, 2, ratio_1)
+                ws.write(row_i, 2, f"{ratio_1}%")
                 row_i += 1
                 continue
             ratio_2 = Decimal(value) / Decimal(data2["流向覆盖"]) * 100
             ratio_2 = ratio_2.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
-            ws.write(row_i, 2, ratio_1)
-            ws.write(row_i, 3, ratio_2)
+            ws.write(row_i, 2, f"{ratio_1}%")
+            ws.write(row_i, 3, f"{ratio_2}%")
             row_i += 1
         # 空白行
         row_i += 1
