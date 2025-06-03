@@ -39,11 +39,14 @@ def read_multi_column(path):
     df.columns = [c1 if c2.startswith("Unnamed") else c2 for c1, c2 in df.columns]
     return df
 
-def read_by_openpyxl(path):
+def read_by_openpyxl(path, header=2):
     """使用openpyxl读取excel, 两行列名的"""
     wb = load_workbook(path, read_only=True, data_only=True)
     ws = wb.active
-    header1 = next(ws.iter_rows(min_row=1, max_row=1, values_only=True))
-    header2 = next(ws.iter_rows(min_row=2, max_row=2, values_only=True))
-    header = [cell2 if cell2 is not None else cell1 for cell1, cell2 in zip(header1, header2)]
+    if header == 2:
+        header1 = next(ws.iter_rows(min_row=1, max_row=1, values_only=True))
+        header2 = next(ws.iter_rows(min_row=2, max_row=2, values_only=True))
+        header = [cell2 if cell2 is not None else cell1 for cell1, cell2 in zip(header1, header2)]
+    else:
+        header = next(ws.iter_rows(min_row=1, max_row=1, values_only=True))
     return wb, ws, header
