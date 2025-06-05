@@ -74,11 +74,13 @@ for key, value in tqdm(output_dict.items(), desc="转换中"):
         each_row.append(value.get(columns[i], 0))
     each_row.append(sum(each_row[16:end_index]))
     # 计算终端状态
-    if each_row[16] <= 0 and each_row[-1] > 0:
+    last_year_sum = each_row[columns.index(f"{end_time.year-1}年合计")]
+    now_year_sum = each_row[columns.index(f"{end_time.year}年合计")]
+    if last_year_sum <= 0 and now_year_sum > 0:
         each_row.append("新增")
-    elif each_row[16] > 0 and each_row[-1] > 0:
+    elif last_year_sum > 0 and now_year_sum> 0:
         each_row.append("存量")
-    elif each_row[16] > 0 and each_row[-1] <= 0:
+    elif last_year_sum > 0 and now_year_sum <= 0:
         each_row.append("丢失")
     else:
         each_row.append("未开发")
