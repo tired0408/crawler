@@ -41,8 +41,9 @@ now_time = datetime.datetime.now()
 print(f"[{now_time}]今日粉丝量:{fans}, 获赞与收藏:{like}")
 print("获取历史数据,并新增当前数据内容")
 df = pd.read_excel(data_path, header=0)
-growth = fans - df.iloc[-1, 1]
-df.loc[len(df)] = [now_time, fans, like, growth]
+fans_growth = fans - df.iloc[-1, 1]
+like_growth = like - df.iloc[-1, 2]
+df.loc[len(df)] = [now_time, fans, like, fans_growth, like_growth]
 with pd.ExcelWriter(data_path, engine="openpyxl") as writer:
     df.to_excel(writer, index=False, sheet_name="Sheet1")
     worksheet = writer.sheets["Sheet1"]
@@ -50,5 +51,6 @@ with pd.ExcelWriter(data_path, engine="openpyxl") as writer:
     worksheet.column_dimensions['B'].width = 18
     worksheet.column_dimensions['C'].width = 18
     worksheet.column_dimensions['D'].width = 18
+    worksheet.column_dimensions['E'].width = 18
 print("数据拉取完成")
 
