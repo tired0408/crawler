@@ -5,11 +5,15 @@ import os
 import sys
 root_path = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
 sys.path.append(root_path)
+import re
 import time
 import shutil
+import traceback
 import requests
 import argparse
 import datetime
+import win32api
+import win32con
 from bs4 import BeautifulSoup
 from dateutil.relativedelta import relativedelta
 from typing import List, TextIO, Optional
@@ -37,11 +41,13 @@ class Store:
             is_annex (bool): 是否下载附件
         """
         self.dir_path = self.init_folder(dir_path, name)
+        self.is_segmentation = is_segmentation
 
-        self.f: Optional[TextIO] = open(os.path.join(dir_path, f"{name}.txt"), 'a', encoding='utf-8') if is_segmentation else None
-        self.img_path = self.init_folder(dir_path, f"{name}的图片") if is_picture else None
+        self.f: Optional[TextIO] = open(os.path.join(self.dir_path, f"{name}.txt"), 'a', encoding='utf-8')
+        self.img_path = self.init_folder(self.dir_path, f"{name}的图片") if is_picture else None
         self.img_index = len(os.listdir(self.img_path)) if is_picture else 0
-        self.annex_path = self.init_folder(dir_path, f"{name}的附件") if is_annex else None
+        self.annex_path = self.init_folder(self.dir_path, f"{name}的附件") if is_annex else None
+        self.html_rename = {}  # HTML文件整理字典，给文件添加日期
 
     def init_folder(self, folder, name):
         """初始化文件夹"""
@@ -106,7 +112,27 @@ class Store:
             return True
         return False
     
-    def write_info(self, name, date: datetime.datetime, ctype, content, images, annexs, comment, htmls):
+    def html_tidy(self, old_name, new_name):
+        """html的数据整理"""
+        old_path: str = os.path.join(self.annex_path, old_name)
+        new_path: str = os.path.join(self.annex_path, new_name)
+        # 判断是否下载好了
+        st = time.time()
+        while (time.time() - st) < 120:
+            if not os.path.exists(old_path):
+                time.sleep(1)
+                continue
+            time.sleep(1)
+            shutil.move(old_path, new_path)
+            return
+        raise Exception(f"Waiting download finnish timeout:{old_name}")
+
+    def save_wx_html(self, save_name, url):
+        """保存微信网页地址"""
+        with open(os.path.join(self.annex_path, save_name), 'w', encoding='utf-8') as f:
+            f.write(url)
+
+    def write_info(self, name, date: datetime.datetime, ctype, content, images, annexs, comment):
         """写入文字信息
         Args:
             name: (str); 人物名称
@@ -116,12 +142,11 @@ class Store:
             images: (list); 图片文件名列表
             annexs: (list); 附件文件名列表
             comment: (list); 评论内容列表
-            htmls: (list); HTML文件名列表
         """
         date_str = date.strftime("%Y-%m-%d")
-        if self.f is None or date_str not in self.f.name:
-            txt_path = os.path.join(self.dir_path, f"{date_str}.txt")
+        if self.is_segmentation and date_str not in self.f.name:
             self.f.close()
+            txt_path = os.path.join(self.dir_path, f"{date_str}.txt")
             self.f = open(txt_path, "w", encoding="utf-8")
 
         self.f.writelines([
@@ -137,9 +162,6 @@ class Store:
         if len(annexs) != 0:
             annexs = ','.join(annexs)
             self.f.write(f"**附件:\n{annexs}\n")
-        if len(htmls) != 0:
-            htmls = ','.join(htmls)
-            self.f.write(f"**超链接列表:\n{htmls}\n")
         if len(comment) !=0:
             self.f.write(f"**评论:\n")
             for value in comment:
@@ -188,27 +210,6 @@ class Crawler:
         self.driver.get(url)
         self.wait_content_load()
 
-    def test(self):
-        file_url = 'https://articles.zsxq.com/id_l7ciest3z8tx.html'
-        name = "test"
-        self.driver.get(file_url)
-        from selenium.webdriver.common.keys import Keys
-        import win32api
-        import win32con
-        # 获取页面title作为文件名
-        title = self.driver.title
-        time.sleep(1)
-        # 按下ctrl+s
-        win32api.keybd_event(0x11, 0, 0, 0)
-        win32api.keybd_event(0x53, 0, 0, 0)
-        win32api.keybd_event(0x53, 0, win32con.KEYEVENTF_KEYUP, 0)
-        win32api.keybd_event(0x11, 0, win32con.KEYEVENTF_KEYUP, 0)
-        time.sleep(1)
-        # 按下回车
-        win32api.keybd_event(0x0D, 0, 0, 0)
-        win32api.keybd_event(0x0D, 0, win32con.KEYEVENTF_KEYUP, 0)
-        time.sleep(1)
-
     def run(self, start_date:datetime.datetime=None):
         """抓取星球数据内容
         
@@ -234,13 +235,16 @@ class Crawler:
                 year_ele.click()
                 self.wait_content_load()
             start_month = start_date.month if year == start_date.year else 1
-            for month in range(start_month, 13):
+            end_month = today.month + 1 if year == today.year else 13
+            for month in range(start_month, end_month):
                 ele = year_ele.find_element(By.XPATH, f"./parent::li//li[text()='{month}月']")
                 if "active" not in ele.get_attribute("class"):
                     ele.click()
                     self.wait_content_load()
-                self.single_page_read()
-
+                if year == start_date.year and month == start_month:
+                    self.single_page_read(start_date)
+                else:
+                    self.single_page_read()
 
     def single_page_read(self, start_date=None):
         """单页数据读取
@@ -293,9 +297,10 @@ class Crawler:
             comments = self.analysis_comment(topic_element) if self.comment_name is not None else []
             images = self.analysis_and_download_imgs(topic_element, store) if self.is_img else []
             annexs = self.analysis_and_download_annex(topic_element, store, date) if self.annex_name is not None else []
-            htmls = self.analysis_and_download_html(topic_element, store) if self.is_html else []
+            if self.is_html:
+                self.analysis_and_download_html(topic_element, store, date)
             # 写入txt文件中
-            store.write_info(role_name, date, content_type, content_text, images, annexs, comments, htmls)
+            store.write_info(role_name, date, content_type, content_text, images, annexs, comments)
 
 
     def analysis_talk_or_task(self, content: WebElement) -> str:
@@ -417,22 +422,54 @@ class Crawler:
             WebDriverWait(container, 10).until_not(EC.visibility_of_element_located((By.CLASS_NAME, "file-preview-container")))
         return names
 
-    def analysis_and_download_html(self, topic_element: WebElement, store: Store):
+    def analysis_and_download_html(self, topic_element: WebElement, store: Store, date:datetime.datetime):
         """分析并下载html"""
-        rd = []
-        for link_ele in topic_element.find_elements(By.TAG_NAME, "a"):
-            url = link_ele.get_attribute("href")
+        for link_ele in topic_element.find_elements(By.XPATH, ".//div[contains(@class, 'content')]//a"):
+            self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", link_ele)
+            time.sleep(1)
+            # 跳过话题性的链接
+            if "hashtag" in link_ele.get_attribute("class"):
+                continue
             name = link_ele.text
-            self.driver.get(url)
-            page_html = self.driver.page_source
-            # 指定保存的文件名和编码（推荐 UTF-8）
-            filename = "offline_page.html"
-            with open(filename, "w", encoding="utf-8") as f:
-                f.write(page_html)
-            self.driver.execute_script('document.title="my_document.pdf"; window.print();')
-        
-        print(1111111111111111111)
-
+            if "-" in name:
+                continue
+            url = link_ele.get_attribute("href")
+            # 统计局的链接跳过
+            if "www.stats.gov.cn" in url:
+                continue
+            # 微信公众号等的文章直接另存为地址
+            if "weixin" in url or "cctv" in url or "pdf" in url:
+                if name.startswith("http"):
+                    name = name.split("/")[-1]
+                store.save_wx_html(f"{date.strftime('%Y%m%d')}_{name}.txt", url)
+                continue
+            save_name = f"{date.strftime('%Y%m%d')}_{name}.html"
+            if store.annex_exists(f"{name}_files"):
+                print(f"该附件已下载:{save_name}")
+                continue
+            time.sleep(1)
+            link_ele.click()
+            time.sleep(5)
+            self.driver.switch_to.window(self.driver.window_handles[-1])
+            name = self.driver.title
+            if "查找图书" not in name and "知识星球" not in name:
+                # 按下ctrl+s
+                win32api.keybd_event(0x11, 0, 0, 0)
+                win32api.keybd_event(0x53, 0, 0, 0)
+                win32api.keybd_event(0x53, 0, win32con.KEYEVENTF_KEYUP, 0)
+                win32api.keybd_event(0x11, 0, win32con.KEYEVENTF_KEYUP, 0)
+                time.sleep(1)
+                # 按下回车
+                win32api.keybd_event(0x0D, 0, 0, 0)
+                win32api.keybd_event(0x0D, 0, win32con.KEYEVENTF_KEYUP, 0)
+                store.html_tidy(f"{name}.html", save_name)
+            else:
+                print(f"该页面无权限:{name}")
+            self.driver.close()
+            self.driver.switch_to.window(self.driver.window_handles[-1])
+            time.sleep(1)
+            
+            
     def wait_content_load(self):
         """等待知识内容加载完成"""
         c1 = EC.visibility_of_element_located((By.CLASS_NAME, 'no-more'))
@@ -454,15 +491,15 @@ if __name__ == "__main__":
     parser.add_argument("-n", "--name", type=str, default=None, help="知识星球的名称")
     opt = parser.parse_args()
     # 测试代码的时候进行修改
-    opt.owner = True
+    # opt.owner = True
     # opt.img = False
     # opt.segmentaion = True
-    opt.html = True
+    # opt.html = True
     # opt.annex = "all"
     # opt.comment = "初善君"
-    opt.date = "2025.06.28_00.00"
-    opt.url = r"https://wx.zsxq.com/group/452241841488"
-    opt.name = "tugou"
+    # opt.date = "2023.01.01_00.00"
+    # opt.url = r"https://wx.zsxq.com/group/452241841488"
+    # opt.name = "tugou"
     # 验证参数的合规性
     assert opt.url is not None
     assert opt.name is not None
@@ -477,7 +514,5 @@ if __name__ == "__main__":
     crawler = Crawler()
     crawler.init_parameter(dir_path, opt.name, opt.owner, opt.img, opt.segmentaion, opt.html, opt.annex, opt.comment)
     crawler.init_driver(chromedriver_path, download_path=download_path, user_path=user_path, chrome_path=chrome_path, is_proxy=False)
-    crawler.test()
     crawler.login(opt.url)
     crawler.run(opt.date)
-
