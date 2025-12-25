@@ -44,6 +44,12 @@ def crawler_data_from_web(chrome_path, chromedriver_path, download_path, acount,
     print("点击《设备耗材商务系统展示》")
     ele.click()
     for year, month, region in search_info:
+        name = f"{year}-{month}_{region}_全部设备耗材汇总.xlsx"
+        file_path = os.path.join(download_path, name)
+        if os.path.exists(file_path):
+            print(f"文件已存在:{file_path}")
+            downfile_list.append(name)
+            continue
         print(f"查看当前是否为目标年份:{year}")
         ele = WebDriverWait(driver, 10).until(EC.element_to_be_clickable((By.ID, "select2-year-container")))
         if year not in ele.text:
@@ -79,8 +85,6 @@ def crawler_data_from_web(chrome_path, chromedriver_path, download_path, acount,
         ele.click()
         st = time.time()
         print("等待文件下载完成")
-        name = f"{year}-{month}_{region}_全部设备耗材汇总.xlsx"
-        file_path = os.path.join(download_path, name)
         while time.time() - st < 300:
             if os.path.exists(file_path):
                 break
@@ -145,7 +149,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("-a", "--acount", type=str, help="爱医助医的账号", default="18611756193")
     parser.add_argument("-p", "--password", type=str, help="爱医助医的密码", default="secret")
-    parser.add_argument("-d", "--date_range", type=str, help="时间范围, 格式: 2025.01-2025.04", default="2025.01-2025.04")
-    parser.add_argument("-r", "--regions", type=str, help="区域, 格式: 其他区域,四川区域", default="其他区域,四川区域")
+    parser.add_argument("-d", "--date_range", type=str, help="时间范围, 格式: 2025.01-2025.04", default="2025.01-2025.11")
+    parser.add_argument("-r", "--regions", type=str, help="区域, 格式: 其他区域,四川区域", default="其他区域,四川区域,北京区域,湖北区域,浙江区域,陕甘宁青新,上海区域,广东区域,山东区域,辽宁区域,江苏区域,内蒙古区域")
     opt = parser.parse_args()
     main(opt.acount, opt.password, opt.date_range, opt.regions)
