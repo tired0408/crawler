@@ -1639,7 +1639,7 @@ def operation_detail_main(template_path):
 
 
 def eleme_main():
-    """饿了么数据的表格《账单明细》处理的主方法"""
+    """饿了么表格处理:《账单明细》"""
     eleme_data = ElemeData()
     print("处理分表-账单汇总")
     eleme_data.billing_summary()
