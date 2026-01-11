@@ -557,16 +557,21 @@ class MeiTuanCrawler(WebCrawler):
         action = self._click_normal_by_js("button.saas-btn-link span.saasicon-double-down")
         signal = self._wait_by_js("button.saas-btn-link span.saasicon-double-up")
         self._js_click(action, signal)  # 展开筛选
-        self._js_click_start_date()
-        self._js_click_last_month()
-        self._js_click_search()
+        action = self._click_normal_by_js("input[placeholder='开始日期']", is_parent=True)
+        signal = self._wait_by_js("div.saas-picker-dropdown-range", key_value="hidden", is_has="false")
+        self._js_click(action, signal)  # 打开日期控件弹窗
+        action = self._click_normal_by_js("div.saas-picker-dropdown-range span", text="上月")
+        signal = self._wait_by_js("div.saas-picker-dropdown-range", key_value="hidden", is_has="true")
+        self._js_click(action, signal)  # 选择上个月份的日期范围
+        action = self._click_normal_by_js("span", text="查询")
+        signal = self._wait_by_js("li[title='上一页']")
+        self._js_click(action, signal)  # 点击查询
+        # 开始导出文件
         self._clear_excel(name)  # 清理excel文件
-        self._js_click_download()
+        action = self._click_normal_by_js("button.saas-btn-text span.saasicon-download")
+        signal = self._wait_by_js("button.saas-btn-text span", text="导出", is_parent=True, key_value="loading", is_has="true")
+        self._js_click(action, signal)  # 点击导出
         self.wait_download(f"*{name}*", name)  # 等待文件下载完成
-        # 点击提醒
-        # action = f"{self._js_span_find('我知道了')}.click()"
-        # signal = f"!{self._js_shadow_root()}.querySelector('div[role=\"dialog\"]')"
-        # self._js_click(action, self._js_execute_result(signal))
 
     def download_autotrophy(self):
         """下载自营外卖/自提订单明细表"""
@@ -592,17 +597,27 @@ class MeiTuanCrawler(WebCrawler):
         module = self._enter_main_module("报表中心")
         self._enter_rc_module(module, menu_name, name)
         self._wait_shadow_dom()  # 等待shadowRoot显现
-        self._js_click_start_date()
-        self._js_click_last_month()
-        action = f"{self._js_span_find('按日')}.click() \n return true"
-        signal = f"{self._js_span_find('按日')}.parentNode.className.includes('saas-radio-button-wrapper-checked')"
-        self._js_click(action, self._js_execute_result(signal))
-        action = f"{self._js_span_find('业务小类')}.click() \n return true"
-        signal = f"{self._js_span_find('业务小类')}.parentNode.className.includes('saas-radio-button-wrapper-checked')"
-        self._js_click(action, self._js_execute_result(signal))
-        self._js_click_search()
+        # 选择日期
+        action = self._click_normal_by_js("input[placeholder='开始日期']", is_parent=True)
+        signal = self._wait_by_js("div.saas-picker-dropdown-range", key_value="hidden", is_has="false")
+        self._js_click(action, signal)  # 打开日期控件弹窗
+        action = self._click_normal_by_js("div.saas-picker-dropdown-range span", text="上月")
+        signal = self._wait_by_js("div.saas-picker-dropdown-range", key_value="hidden", is_has="true")
+        self._js_click(action, signal)  # 选择上个月份的日期范围
+        action = self._click_normal_by_js("span", text="按日")
+        signal = self._wait_by_js("span", text="按日", is_parent=True, key_value="checked", is_has="true")
+        self._js_click(action, signal)  # 选择按日维度
+        action = self._click_normal_by_js("span", text="业务小类")
+        signal = self._wait_by_js("span", text="业务小类", is_parent=True, key_value="checked", is_has="true")
+        self._js_click(action, signal)  # 选择按业务小类维度
+        action = self._click_normal_by_js("span", text="查询")
+        signal = self._wait_by_js("li[title='上一页']")
+        self._js_click(action, signal)  # 点击查询
+        # 开始导出文件
         self._clear_excel(name)
-        self._js_click_download()
+        action = self._click_normal_by_js("button.saas-btn-text span.saasicon-download")
+        signal = self._wait_by_js("button.saas-btn-text span", text="导出", is_parent=True, key_value="loading", is_has="true")
+        self._js_click(action, signal)  # 点击导出
         self.wait_download(f"*{name}*", name)
 
     def download_pay_settlement(self):
@@ -685,7 +700,7 @@ class MeiTuanCrawler(WebCrawler):
         # 开始导出文件
         self._clear_excel(name)
         action = self._click_normal_by_js("button.saas-btn-text span.saasicon-download")
-        signal = self._wait_export("button.saas-btn-text span")
+        signal = self._wait_by_js("button.saas-btn-text span", text="导出", is_parent=True, key_value="loading", is_has="true")
         self._js_click(action, signal)  # 点击导出
         self.wait_download(f"*{download_name}*", save_name)  # 等待导出完成
 
@@ -799,19 +814,14 @@ class MeiTuanCrawler(WebCrawler):
         WebDriverWait(self._driver, 30).until(EC.visibility_of_element_located((By.TAG_NAME, "render-box-root-x")))  # 等待shadowRoot显现
         time.sleep(3)
 
-    def _js_span_find(self, value):
-        """"通过JS命令查找span元素"""
-        return f"Array.from({self._js_shadow_root()}.querySelectorAll('span')).find(span => span.textContent.trim() === '{value}')"
-    
-    def _js_shadow_root(self):
-        """查找shadowRoot"""
-        return """
-            Array.from(document.querySelectorAll('render-box-root-x'))
-            .find(root => root.offsetParent !== null).shadowRoot
-        """
-
     def _click_normal_by_js(self, value, text=None, is_parent=False):
-        """通用的点击方式,通过CSS选择器定位元素并点击"""
+        """通用的点击方式,通过CSS选择器定位元素并点击
+        
+        Args:
+            value: CSS选择器
+            text: 元素的文本
+            is_parent: 是否是CSS选择器的这个直接父元素
+        """
         if text is None:
             ele_pattern = f"const ele = root.shadowRoot.querySelector('{value}')"
         else:
@@ -826,11 +836,13 @@ class MeiTuanCrawler(WebCrawler):
         return true
         """
     
-    def _wait_by_js(self, css_value, text=None, key_value=None, is_has="true", is_parent=False):
+    def _wait_by_js(self, css_value, text=None, is_parent=False,key_value=None, is_has="true"):
         """通用的JS等待显示方式,通过CSS选择器来查找元素
         
         Args:
             css_value: CSS选择器
+            text: 元素的文本
+            is_parent: 是否是CSS选择器的这个直接父元素
             key_value: 判断的值,例如hidden
             is_has: 是否是含有,还是不含有
         """
@@ -862,16 +874,6 @@ class MeiTuanCrawler(WebCrawler):
         const parent = span.parentElement
         const val = parent.getAttribute('saas-click-animating-without-extra-node')
         if (val {'=' if is_finish else '!'}== 'false') return true;
-        return false
-        """
-
-    def _wait_export(self, value):
-        """判断是否处于导出加载状态"""
-        return f"""
-        const root = Array.from(document.querySelectorAll('render-box-root-x')).find(ele => ele.offsetParent !== null);
-        const span = Array.from(root.shadowRoot.querySelectorAll('{value}')).find(ele => ele.textContent.trim() === '导出');
-        const button = span.parentElement
-        if (button.className.includes('loading')) return true;
         return false
         """
 
@@ -908,33 +910,6 @@ class MeiTuanCrawler(WebCrawler):
             return true
         """
         return value
-
-    def _js_click_start_date(self):
-        """"通过JS点击shadowRoot里面的开始日期控件"""
-        action = f"""
-        {self._js_shadow_root()}.querySelector('input[placeholder=\"开始日期\"]').parentElement.click();
-        return true
-        """
-        signal = f"!{self._js_span_find('上月')}.closest('div.saas-picker-dropdown-range').className.includes('saas-picker-dropdown-hidden')"
-        self._js_click(action, self._js_execute_result(signal))
-
-    def _js_click_last_month(self):
-        """"通过JS点击shadowRoot里日期控件中的上月按钮"""
-        action = f"{self._js_span_find('上月')}.click() \n return true"
-        signal = f"{self._js_span_find('上月')}.closest('div.saas-picker-dropdown-range').className.includes('saas-picker-dropdown-hidden')"
-        self._js_click(action, self._js_execute_result(signal))
-    
-    def _js_click_search(self):
-        """"通过JS点击shadowRoot里的查询按钮"""
-        action = f"{self._js_span_find('查询')}.click() \n return true"
-        signal = f"{self._js_shadow_root()}.querySelector('li[title=\"上一页\"]')"
-        self._js_click(action, self._js_execute_result(signal), timeout=5)
-    
-    def _js_click_download(self):
-        """"通过JS点击shadowRoot里的下载按钮"""
-        action = f"{self._js_span_find('导出')}.click() \n return true"
-        signal = f"{self._js_span_find('导出')}.parentNode.className.includes('saas-btn-loading') \n return true"
-        self._js_click(action, self._js_execute_result(signal))
 
     def _date_select_1(self, submodule: WebElement):
         """日期选择1:支付结算,支付明细"""
