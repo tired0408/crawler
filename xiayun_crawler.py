@@ -1079,14 +1079,17 @@ class ElemeData:
             sheet = self.wb[name]
             self.wb.remove(sheet)
 
-    def adjust_font_size(self):
-        """调整表格字体大小"""
+    def adjust_all_style(self):
+        """调整所有分表的格式"""
         font_11 = Font(size=11)
         for ws in self.wb.worksheets:
+            # 调整字体大小
             for row in ws.iter_rows():
                 for cell in row:
                     cell.font = font_11
-
+            # 冻结首行
+            ws.freeze_panes = "A2"
+        
     def billing_summary(self):
         """处理分表-账单汇总"""
         ws = self.get_ws("账单汇总")
@@ -1172,7 +1175,6 @@ class ElemeData:
         for col in range(column_index_from_string("J"), ws.max_column + 1):
             for row in range(1, ws.max_row+1):
                 ws.cell(row, col).style = number_style
-        ws.freeze_panes = "A2"
         # 填充列数据---结算
         settle_letters = ['Q', 'R', 'T', 'AE', 'AF', 'AG', 'AJ', 'BE', 'BF', 'BH', 'BW', 'BX', 'BY', 'BZ', 'CC', 'AT']
         settle_col_i = header.index("结算") + 1
@@ -1183,7 +1185,17 @@ class ElemeData:
         diff_col_i = header.index("差额") + 1 
         for i in range(2, ws.max_row + 1):
             ws.cell(i, diff_col_i, "=K3-J3")
-        # 计算差额并复制差额不为0的数据到新表(赔偿单)
+        # 最后一行新增合计数
+        self.add_total_row(ws) 
+        sum_row_i = ws.max_row + 1
+        ws.cell(sum_row_i, 1, "合计")
+        for i in range(column_index_from_string("J"), column_index_from_string("CC")):
+            col_str = get_column_letter(i)
+            range_start = f"{col_str}2"
+            range_end = f"{col_str}{sum_row_i - 1}"
+            ws.cell(sum_row_i, i, f"=SUM({range_start}:{range_end})")    
+            ws.column_dimensions[col_str].width = 12
+        # 新增分表-赔偿单: 计算差额并复制差额不为0的数据
         compensate_data = []
         settle_indexs = [column_index_from_string(letter) for letter in settle_letters]
         for row in ws.iter_rows(min_row=2, values_only=True):
@@ -1197,26 +1209,33 @@ class ElemeData:
             for i in range(1, ws.max_column + 1):
                 compensate_ws.cell(1, i, ws.cell(1, i).value)
             self.add_total_row(compensate_ws)
-        # 最后一行新增合计数
-        self.add_total_row(ws) 
-        sum_row_i = ws.max_row + 1
-        ws.cell(sum_row_i, 1, "合计")
-        for i in range(column_index_from_string("J"), column_index_from_string("CC")):
-            col_str = get_column_letter(i)
-            range_start = f"{col_str}2"
-            range_end = f"{col_str}{sum_row_i - 1}"
-            ws.cell(sum_row_i, i, f"=SUM({range_start}:{range_end})")    
-            ws.column_dimensions[col_str].width = 12
-    
-    def add_total_row(self, ws: Worksheet):
-        """新增合计行"""
+        # 新增分表-客单价:G列"订单子类型"中的即时单
+        average_data = []
+        order_type_index = header.index("订单子类型")
+        for row in ws.iter_rows(min_row=2, values_only=True):
+            if row[order_type_index] != "即时单":
+                continue
+            average_data.append([cell.value for cell in row])
+        if len(average_data) != 0:
+            average_ws = self.wb.create_sheet("客单价")
+            for i, row in enumerate(average_data):
+                for j, value in enumerate(row):
+                    average_ws.cell(i+1, j+1, value)
+            self.add_total_row(average_ws, formula="AVERAGE")
+    def add_total_row(self, ws: Worksheet, formula="SUM"):
+        """新增统计行
+        
+        Args:
+            ws (Worksheet): 工作表
+            formula (str, optional): 计算公式. Defaults to "SUM".
+        """
         sum_row_i = ws.max_row + 1
         ws.cell(sum_row_i, 1, "合计")
         for i in range(10, ws.max_column + 1):
             col_str = get_column_letter(i)
             range_start = f"{col_str}2"
             range_end = f"{col_str}{sum_row_i - 1}"
-            ws.cell(sum_row_i, i, f"=SUM({range_start}:{range_end})")    
+            ws.cell(sum_row_i, i, f"={formula}({range_start}:{range_end})")    
 
 class DaDaAutotrophy:
     """达达门店订单明细的处理"""
@@ -1396,16 +1415,16 @@ class TalkOutData:
         ws = self.wb[f"{GOL.last_month.year}年饿了么"]
         row_i = [str(ws.cell(i, 1).value) for i in range(4, 16)]
         row_i = row_i.index(GOL.last_month.strftime("%y.%m")) + 4
-        ws.cell(row_i, 2, should_income)  
-        ws.cell(row_i, 3, service_cost)  
-        ws.cell(row_i, 4, time_raise)  
-        ws.cell(row_i, 5, distance_raise)  
-        ws.cell(row_i, 6, price_raise)  
-        ws.cell(row_i, 7, activty_subsidy)  
-        ws.cell(row_i, 8, chargeback)  
-        ws.cell(row_i, 9, other)  
-        ws.cell(row_i, 10, eat_now_pay_later)
-        ws.cell(row_i, 12, insurance) 
+        ws.cell(row_i, 2, should_income)  # 应收
+        ws.cell(row_i, 3, service_cost)  # 抽佣服务费
+        ws.cell(row_i, 4, time_raise)  # 时段加价
+        ws.cell(row_i, 5, distance_raise)  # 距离加价
+        ws.cell(row_i, 6, price_raise)  # 价格加价
+        ws.cell(row_i, 7, activty_subsidy)  # 商户承担活动
+        ws.cell(row_i, 8, chargeback)  # 部分退单-申请退单金额
+        ws.cell(row_i, 9, other)  # 其他(商家自行配送补贴)
+        ws.cell(row_i, 10, eat_now_pay_later)  # 先享后付服务费
+        ws.cell(row_i, 12, insurance)  # 保险费
 
     def collect_autotrophy(self):
         """汇总自营外卖的数据"""
@@ -1647,8 +1666,8 @@ def eleme_main():
     eleme_data.take_out()
     print("删除不保留的分表")
     eleme_data.del_useless_sheet()
-    print("调整整个表格的字体大小")
-    eleme_data.adjust_font_size()
+    print("调整所有表格的格式")
+    eleme_data.adjust_all_style()
     print("保存文件")
     eleme_data.save()
     print("饿了么数据的留存表已整理完毕")
@@ -1679,9 +1698,9 @@ def meituan_autotrophy_main():
 
 
 def take_out_main():
-    """外卖收入汇总表的主方法"""
+    """饿了么表格数据处理:《外卖收入汇总表》"""
     take_out = TalkOutData()
-    print("汇总饿了么的数据")
+    print("从《账单明细》文档中获取数据:")
     take_out.collect_eleme()
     print("汇总自营外卖的数据")
     take_out.collect_autotrophy()
@@ -1731,14 +1750,14 @@ def main():
         copy_folder(save_folder, backup_folder)
         # 汇总营业明细表
         operation_detail_main(operate_detail_template)
-        # 饿了么导出数据的处理-账单明细表
-        eleme_main()
+        # 饿了么表格处理:《账单明细》
+        eleme_main()  
         # 自营外卖(美团后台)表处理
         meituan_autotrophy_main()
         # 自营外卖(达达)表处理
         dada_autotrophy_main()
-        # 汇总外卖收入表
-        take_out_main()
+        # 饿了么表格数据处理:《外卖收入汇总表》
+        take_out_main()  
 
 
 if __name__ == "__main__":
