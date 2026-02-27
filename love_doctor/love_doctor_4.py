@@ -157,7 +157,7 @@ def download_file(crawler: CrawlerDriver, year, month, select_name, download_pat
         range_ele = crawler.driver.find_element(By.CLASS_NAME, "header_3")
         hope_text = f"{year}年{month:>02}月"
         if hope_text not in range_ele.text:
-            print(f"数据范围错误, 期望包含:{year}-{month}-01, 实际显示:{range_ele.text}")
+            print(f"数据范围错误, 期望包含:{hope_text}, 实际显示:{range_ele.text}")
             return False
         else:
             file_path = crawler.download((By.ID, "download"))
