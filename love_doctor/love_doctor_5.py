@@ -17,17 +17,25 @@ def main():
     path = os.path.dirname(__file__)
     download_path = os.path.join(path, "custom_file")
     files = glob(os.path.join(download_path, "客户维护数据*.xlsx"))
+    files = [path for path in files if "客户维护数据报告-汇总表.xlsx" not in path]
     wb = Workbook()
     ws = wb.active
     # 写入标题
-    headers = ["省份", "终端客户", *process_raw_data(files)]
+    headers = ["省份", "终端客户"]
+    for header_text in process_raw_data(files):
+        if "合计" in header_text:
+            headers.append(header_text)
+        else:
+            headers.extend(["是否跨省销售", "跨省销售信息", header_text])
     for col_i, header in enumerate(headers):
         ws.cell(row=1, column=col_i+1, value=header)
     # 填充数据
     row_index_sign = []
     for path in files:
         year_month = extract_ym_str(os.path.basename(path))
-        col_i = headers.index(year_month) + 1
+        col_i_time = headers.index(year_month) + 1
+        col_i_across_province = col_i_time - 2
+        col_i_across_detail = col_i_time - 1
         data_wb = load_workbook(path)
         data_ws = data_wb["客户维护数据报告"]
         province = data_ws.cell(row=2, column=1).value
@@ -36,9 +44,12 @@ def main():
             continue
         data_ws = data_wb["流向明细"]
         header_row = next(data_ws.iter_rows(min_row=1, max_row=1, values_only=True))
+        # 写入所需数据
         purchase_col = header_row.index("耗材采购量")
+        cross_province_col = header_row.index("是否跨省销售")
+        cross_detail_col = header_row.index("跨省销售信息")
         for row in data_ws.iter_rows(min_row=2, values_only=True):
-            value = row[purchase_col]
+            # 获取行索引（从1开始）,如果没有则新增
             custom_name = row[0]
             sign = f"{province}&&&{custom_name}"
             if sign not in row_index_sign:
@@ -48,7 +59,10 @@ def main():
                 ws.cell(row=row_i, column=2, value=custom_name)
             else:
                 row_i = row_index_sign.index(sign) + 2
-            ws.cell(row=row_i, column=col_i, value=value)
+            # 填充数据
+            ws.cell(row=row_i, column=col_i_time, value=row[purchase_col])
+            ws.cell(row=row_i, column=col_i_across_province, value=row[cross_province_col])
+            ws.cell(row=row_i, column=col_i_across_detail, value=row[cross_detail_col])
     # 填充背景色:合计行, 并计算合计数量
     color_indexs = [i for i, h in enumerate(headers) if "合计" in h]
     colors = ["FFFF99", "CCE5FF", "E2F0D9", "F2F2F2", "FFE6CC", "E5CCFF", "FFCCCC"][:len(color_indexs)]
@@ -57,7 +71,7 @@ def main():
         fill = PatternFill(start_color=color, end_color=color, fill_type='solid')
         for row in range(2, ws.max_row+1):
             start_letter = get_column_letter(sum_start_index)
-            end_letter = get_column_letter(color_index - 1)
+            end_letter = get_column_letter(color_index)
             cell = ws.cell(row=row, column=color_index+1, value=f"=SUM({start_letter}{row}:{end_letter}{row})")
             cell.fill = fill
         sum_start_index = color_index + 1
