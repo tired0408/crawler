@@ -2,6 +2,7 @@ import re
 import os
 import time
 import json
+import random
 import asyncio
 import nodriver as uc
 from tqdm import tqdm
@@ -72,7 +73,8 @@ async def get_post_id(page: Tab):
         await page.save_screenshot('error.png')
         return []
     # 4. 获取帖子列表并提取信息
-    end_date = datetime(year=2025, month=1, day=1)
+    start_date = datetime(year=2025, month=1, day=1)
+    end_date = datetime(year=2024, month=1, day=1)
     all_posts = {}
     while True:
         # 获取当前页面上的帖子元素
@@ -84,6 +86,8 @@ async def get_post_id(page: Tab):
             time_value = await str_to_timestamp(time_elem.text)
             data_id = await post.query_selector('a[data-id]')
             data_id = data_id.attrs["data-id"]
+            if time_value > start_date:
+                continue
             if time_value < end_date:
                 print("数据时间已超过两年前，结束爬取")
                 return all_posts
@@ -149,14 +153,18 @@ async def main():
         for time_str, data_id in tqdm(all_posts.items(), desc="博客提取中"):
             each_url = f"https://xueqiu.com/4104161666/{data_id}"
             page = await browser.get(each_url)
-            await asyncio.sleep(5)
+            wait_time = random.uniform(4, 10) 
+            await asyncio.sleep(wait_time)
             # 等待帖子列表容器出现（根据实际情况调整选择器）
             try:
                 await robust_wait_for(page, '.article__bd__detail', timeout=60)
                 detail_ele = await page.query_selector(".article__bd__detail")
+                content = detail_ele.text_all
+                if "量化" not in content:
+                    continue
                 f.writelines([
                     f"**时间:{time_str}\n",
-                    f"**内容:{detail_ele.text_all}\n",
+                    f"**内容:{content}\n",
                 ])
                 f.write(f"{'-' * 100}\n")
                 already_key.append(time_str)

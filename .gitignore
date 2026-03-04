@@ -124,12 +124,13 @@ venv.bak/
 .mypy_cache/
 .dmypy.json
 dmypy.json
-
 # Pyre type checker
 .pyre/
-
 # idea file
 .idea/
+
+
+# 用户自定义忽视文件
 # test file
 test*.py
 # 忽视一些比较大的文件
@@ -141,10 +142,10 @@ test*.py
 *.csv
 *.mat
 *.jpg
-deepLearning/**/*.png
+*.png
 *.jpeg
 *.avi
+tmp*
 !requirements.txt
-# 用户自定义的文件
 chromedriver_mac_arm64_114/
 *.xlsx

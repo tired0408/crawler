@@ -1713,8 +1713,8 @@ def main():
     """主方法"""
     operate_detail_template = r"E:\NewFolder\xiayun\营业明细表模板.xlsx"
     user_path = r'C:\Users\Administrator\AppData\Local\Google\Chrome\User Data'
-    chrome_driver_path = r'E:\NewFolder\chromedriver_mac_arm64_114\chromedriver.exe'
-    chrome_path = r"E:\NewFolder\chromedriver_mac_arm64_114\chrome114\App\Chrome-bin\chrome.exe"
+    chrome_driver_path = r'E:\py-workspace\crawler\chromedriver_mac_arm64_114\chromedriver.exe'
+    chrome_path = r"E:\py-workspace\crawler\chromedriver_mac_arm64_114\chrome114\App\Chrome-bin\chrome.exe"
     download_path = r"D:\Download"
     # 定义保存名称
     save_folder = os.path.join(os.path.dirname(operate_detail_template), "输入数据")
