@@ -8,6 +8,7 @@ import time
 import shutil
 import warnings
 import calendar
+import traceback
 import xlwings as xw
 import pandas as pd
 from copy import copy
@@ -29,7 +30,7 @@ from datetime import timedelta, date, datetime
 from openpyxl.worksheet.worksheet import Worksheet
 from openpyxl import load_workbook
 from openpyxl.cell import Cell
-from openpyxl.styles import PatternFill, Font, NamedStyle
+from openpyxl.styles import PatternFill, Font, NamedStyle, Side, Border
 from openpyxl.utils.cell import get_column_letter, column_index_from_string
 warnings.simplefilter("ignore")  # 忽略pandas使用openpyxl读取excel文件的警告
 import matplotlib
@@ -182,7 +183,7 @@ class GetOperateDetail:
             row2, row3, row4, "营业收入构成", "自定义记账", "公关/奖品/活动/无实质性收入（自）", is_must=False)
         wechat_i = get_3row_index(row2, row3, row4, "营业收入构成", "自定义记账", [
                                   "微信收款（店长号收款）（自）", "微信店长号收款（自）", "店长微信收款收入（自）"])
-        ele_me_free_i = get_3row_index(row2, row3, row4, "支付优惠构成", "外卖", "饿了么外卖")  # 56
+        ele_me_free_i = get_3row_index(row2, row3, row4, "支付优惠构成", "外卖", "淘宝闪购")  # 56
         other_free_i = get_3row_index(row2, row3, row4, "折扣优惠构成", "小计", "小计")  # 68
         for row in data.iloc[5:].itertuples():
             row = row[1:]
@@ -319,7 +320,7 @@ class WebCrawler(ABC):
         self._action = ActionChains(self._driver)
 
     @abstractmethod
-    def _init_name2save(self):
+    def _init_name2save(self) -> dict:
         """初始化下载文件与文件保存地址的对应关系"""
 
     def wait_download(self, name, name_key=None):
@@ -557,21 +558,16 @@ class MeiTuanCrawler(WebCrawler):
         action = self._click_normal_by_js("button.saas-btn-link span.saasicon-double-down")
         signal = self._wait_by_js("button.saas-btn-link span.saasicon-double-up")
         self._js_click(action, signal)  # 展开筛选
-        action = self._click_normal_by_js("input[placeholder='开始日期']", is_parent=True)
-        signal = self._wait_by_js("div.saas-picker-dropdown-range", key_value="hidden", is_has="false")
-        self._js_click(action, signal)  # 打开日期控件弹窗
-        action = self._click_normal_by_js("div.saas-picker-dropdown-range span", text="上月")
-        signal = self._wait_by_js("div.saas-picker-dropdown-range", key_value="hidden", is_has="true")
-        self._js_click(action, signal)  # 选择上个月份的日期范围
-        action = self._click_normal_by_js("span", text="查询")
-        signal = self._wait_by_js("li[title='上一页']")
-        self._js_click(action, signal)  # 点击查询
-        # 开始导出文件
+        self._js_click_start_date()
+        self._js_click_last_month()
+        self._js_click_search()
         self._clear_excel(name)  # 清理excel文件
-        action = self._click_normal_by_js("button.saas-btn-text span.saasicon-download")
-        signal = self._wait_by_js("button.saas-btn-text span", text="导出", is_parent=True, key_value="loading", is_has="true")
-        self._js_click(action, signal)  # 点击导出
+        self._js_click_download()
         self.wait_download(f"*{name}*", name)  # 等待文件下载完成
+        # 点击提醒
+        # action = f"{self._js_span_find('我知道了')}.click()"
+        # signal = f"!{self._js_shadow_root()}.querySelector('div[role=\"dialog\"]')"
+        # self._js_click(action, self._js_execute_result(signal))
 
     def download_autotrophy(self):
         """下载自营外卖/自提订单明细表"""
@@ -597,27 +593,17 @@ class MeiTuanCrawler(WebCrawler):
         module = self._enter_main_module("报表中心")
         self._enter_rc_module(module, menu_name, name)
         self._wait_shadow_dom()  # 等待shadowRoot显现
-        # 选择日期
-        action = self._click_normal_by_js("input[placeholder='开始日期']", is_parent=True)
-        signal = self._wait_by_js("div.saas-picker-dropdown-range", key_value="hidden", is_has="false")
-        self._js_click(action, signal)  # 打开日期控件弹窗
-        action = self._click_normal_by_js("div.saas-picker-dropdown-range span", text="上月")
-        signal = self._wait_by_js("div.saas-picker-dropdown-range", key_value="hidden", is_has="true")
-        self._js_click(action, signal)  # 选择上个月份的日期范围
-        action = self._click_normal_by_js("span", text="按日")
-        signal = self._wait_by_js("span", text="按日", is_parent=True, key_value="checked", is_has="true")
-        self._js_click(action, signal)  # 选择按日维度
-        action = self._click_normal_by_js("span", text="业务小类")
-        signal = self._wait_by_js("span", text="业务小类", is_parent=True, key_value="checked", is_has="true")
-        self._js_click(action, signal)  # 选择按业务小类维度
-        action = self._click_normal_by_js("span", text="查询")
-        signal = self._wait_by_js("li[title='上一页']")
-        self._js_click(action, signal)  # 点击查询
-        # 开始导出文件
+        self._js_click_start_date()
+        self._js_click_last_month()
+        action = f"{self._js_span_find('按日')}.click() \n return true"
+        signal = f"{self._js_span_find('按日')}.parentNode.className.includes('saas-radio-button-wrapper-checked')"
+        self._js_click(action, self._js_execute_result(signal))
+        action = f"{self._js_span_find('业务小类')}.click() \n return true"
+        signal = f"{self._js_span_find('业务小类')}.parentNode.className.includes('saas-radio-button-wrapper-checked')"
+        self._js_click(action, self._js_execute_result(signal))
+        self._js_click_search()
         self._clear_excel(name)
-        action = self._click_normal_by_js("button.saas-btn-text span.saasicon-download")
-        signal = self._wait_by_js("button.saas-btn-text span", text="导出", is_parent=True, key_value="loading", is_has="true")
-        self._js_click(action, signal)  # 点击导出
+        self._js_click_download()
         self.wait_download(f"*{name}*", name)
 
     def download_pay_settlement(self):
@@ -700,7 +686,7 @@ class MeiTuanCrawler(WebCrawler):
         # 开始导出文件
         self._clear_excel(name)
         action = self._click_normal_by_js("button.saas-btn-text span.saasicon-download")
-        signal = self._wait_by_js("button.saas-btn-text span", text="导出", is_parent=True, key_value="loading", is_has="true")
+        signal = self._wait_export("button.saas-btn-text span")
         self._js_click(action, signal)  # 点击导出
         self.wait_download(f"*{download_name}*", save_name)  # 等待导出完成
 
@@ -811,17 +797,22 @@ class MeiTuanCrawler(WebCrawler):
 
     def _wait_shadow_dom(self) -> WebElement:
         """等待shadow DOM加载完成"""
-        WebDriverWait(self._driver, 30).until(EC.visibility_of_element_located((By.TAG_NAME, "render-box-root-x")))  # 等待shadowRoot显现
+        WebDriverWait(self._driver, 30).until(EC.presence_of_element_located((By.TAG_NAME, "render-box-root-x")))  # 等待shadowRoot显现
         time.sleep(3)
 
-    def _click_normal_by_js(self, value, text=None, is_parent=False):
-        """通用的点击方式,通过CSS选择器定位元素并点击
-        
-        Args:
-            value: CSS选择器
-            text: 元素的文本
-            is_parent: 是否是CSS选择器的这个直接父元素
+    def _js_span_find(self, value):
+        """"通过JS命令查找span元素"""
+        return f"Array.from({self._js_shadow_root()}.querySelectorAll('span')).find(span => span.textContent.trim() === '{value}')"
+    
+    def _js_shadow_root(self):
+        """查找shadowRoot"""
+        return """
+            Array.from(document.querySelectorAll('render-box-root-x'))
+            .find(root => root.offsetParent !== null).shadowRoot
         """
+
+    def _click_normal_by_js(self, value, text=None, is_parent=False):
+        """通用的点击方式,通过CSS选择器定位元素并点击"""
         if text is None:
             ele_pattern = f"const ele = root.shadowRoot.querySelector('{value}')"
         else:
@@ -836,13 +827,11 @@ class MeiTuanCrawler(WebCrawler):
         return true
         """
     
-    def _wait_by_js(self, css_value, text=None, is_parent=False,key_value=None, is_has="true"):
+    def _wait_by_js(self, css_value, text=None, key_value=None, is_has="true", is_parent=False):
         """通用的JS等待显示方式,通过CSS选择器来查找元素
         
         Args:
             css_value: CSS选择器
-            text: 元素的文本
-            is_parent: 是否是CSS选择器的这个直接父元素
             key_value: 判断的值,例如hidden
             is_has: 是否是含有,还是不含有
         """
@@ -874,6 +863,16 @@ class MeiTuanCrawler(WebCrawler):
         const parent = span.parentElement
         const val = parent.getAttribute('saas-click-animating-without-extra-node')
         if (val {'=' if is_finish else '!'}== 'false') return true;
+        return false
+        """
+
+    def _wait_export(self, value):
+        """判断是否处于导出加载状态"""
+        return f"""
+        const root = Array.from(document.querySelectorAll('render-box-root-x')).find(ele => ele.offsetParent !== null);
+        const span = Array.from(root.shadowRoot.querySelectorAll('{value}')).find(ele => ele.textContent.trim() === '导出');
+        const button = span.parentElement
+        if (button.className.includes('loading')) return true;
         return false
         """
 
@@ -910,6 +909,33 @@ class MeiTuanCrawler(WebCrawler):
             return true
         """
         return value
+
+    def _js_click_start_date(self):
+        """"通过JS点击shadowRoot里面的开始日期控件"""
+        action = f"""
+        {self._js_shadow_root()}.querySelector('input[placeholder=\"开始日期\"]').parentElement.click();
+        return true
+        """
+        signal = f"!{self._js_span_find('上月')}.closest('div.saas-picker-dropdown-range').className.includes('saas-picker-dropdown-hidden')"
+        self._js_click(action, self._js_execute_result(signal))
+
+    def _js_click_last_month(self):
+        """"通过JS点击shadowRoot里日期控件中的上月按钮"""
+        action = f"{self._js_span_find('上月')}.click() \n return true"
+        signal = f"{self._js_span_find('上月')}.closest('div.saas-picker-dropdown-range').className.includes('saas-picker-dropdown-hidden')"
+        self._js_click(action, self._js_execute_result(signal))
+    
+    def _js_click_search(self):
+        """"通过JS点击shadowRoot里的查询按钮"""
+        action = f"{self._js_span_find('查询')}.click() \n return true"
+        signal = f"{self._js_shadow_root()}.querySelector('li[title=\"上一页\"]')"
+        self._js_click(action, self._js_execute_result(signal), timeout=5)
+    
+    def _js_click_download(self):
+        """"通过JS点击shadowRoot里的下载按钮"""
+        action = f"{self._js_span_find('导出')}.click() \n return true"
+        signal = f"{self._js_span_find('导出')}.parentNode.className.includes('saas-btn-loading') \n return true"
+        self._js_click(action, self._js_execute_result(signal))
 
     def _date_select_1(self, submodule: WebElement):
         """日期选择1:支付结算,支付明细"""
@@ -1073,23 +1099,20 @@ class ElemeData:
     def del_useless_sheet(self):
         """删除没用的分表"""
         for name in self.wb.sheetnames:
-            if name in ["账单汇总", "外卖账单明细", "抖音渠道佣金明细","保险相关业务账单明细", "赔偿单", "对账指引"]:
+            if name in ["账单汇总", "外卖账单明细", "抖音渠道佣金明细","保险相关业务账单明细", "赔偿单", "客单价"]:
                 continue
             print(f"删除分表:{name}")
             sheet = self.wb[name]
             self.wb.remove(sheet)
 
-    def adjust_all_style(self):
-        """调整所有分表的格式"""
+    def adjust_font_size(self):
+        """调整表格字体大小"""
         font_11 = Font(size=11)
         for ws in self.wb.worksheets:
-            # 调整字体大小
             for row in ws.iter_rows():
                 for cell in row:
                     cell.font = font_11
-            # 冻结首行
-            ws.freeze_panes = "A2"
-        
+
     def billing_summary(self):
         """处理分表-账单汇总"""
         ws = self.get_ws("账单汇总")
@@ -1111,6 +1134,14 @@ class ElemeData:
             eleme_data = eleme_data[["账单日期", "结算金额"]]
             eleme_data = eleme_data.rename(columns={"结算金额": "闪购联盟推广"})
             df_result = insert_data_column_merge(df_result, eleme_data, "结算金额", "闪购联盟推广")
+        # 插入数据：全站推广
+        promotion_data = df[df["账单类型"] == "全站推广"]
+        if len(promotion_data) == 0:
+            print("数据为空,请注意!!!------全站推广")
+        else:
+            promotion_data = promotion_data[["账单日期", "结算金额"]]
+            promotion_data = promotion_data.rename(columns={"结算金额": "全站推广"})
+            df_result = insert_data_column_merge(df_result, promotion_data, "结算金额", "全站推广")
         # 插入数据: 抖音渠道佣金
         tiktok_ws = self.get_ws("抖音渠道佣金明细") 
         if tiktok_ws is not None and tiktok_ws.max_row > 1:
@@ -1138,21 +1169,26 @@ class ElemeData:
             each_cell._style = copy(header_style)
         # 写入数据
         data_row = len(df_result)
-        max_col = len(df_result_header)
-        for i in range(2, ws.max_row+1, 1):
-            for j in range(max_col):
-                data_i = i-2
-                if data_i < data_row:
-                    ws.cell(i, j+1, df_result.iloc[data_i, j])
-                else:
-                    ws.cell(i, j+1, None)
+        for i, row in df_result.iterrows():
+            for j, value in enumerate(row):
+                ws.cell(i + 2, j + 1, value)
+        ws.delete_rows(data_row+2, ws.max_row - data_row-1) 
         # 对数据进行求和
-        row_i = len(df_result)
-        for name in ["结算金额", "抖音渠道佣金", "闪购联盟推广", "保障服务费", "小计"]:
-            if name not in df_result_header:
-                continue
-            col_i = df_result_header.index(name) + 1
-            ws.cell(row_i, col_i, df_result[name].sum())
+        row_i = len(df_result) + 2
+        header = df_result.columns.tolist()
+        for i in range(header.index("结算金额"), header.index("小计")+1):
+            ws.cell(row_i, i+1, df_result[header[i]].sum())
+        # 给所有数据加框线
+        thin_side  = Side(border_style="thin", color="000000")
+        border = Border(
+            left=thin_side,
+            right=thin_side,
+            top=thin_side,
+            bottom=thin_side
+        )
+        for row in ws.iter_rows():
+            for cell in row:
+                cell.border = border
 
     def get_ws(self, name):
         """获取工作表,排除空格等障碍"""
@@ -1175,6 +1211,7 @@ class ElemeData:
         for col in range(column_index_from_string("J"), ws.max_column + 1):
             for row in range(1, ws.max_row+1):
                 ws.cell(row, col).style = number_style
+        ws.freeze_panes = "A2"
         # 填充列数据---结算
         settle_letters = ['Q', 'R', 'T', 'AE', 'AF', 'AG', 'AJ', 'BE', 'BF', 'BH', 'BW', 'BX', 'BY', 'BZ', 'CC', 'AT']
         settle_col_i = header.index("结算") + 1
@@ -1185,6 +1222,41 @@ class ElemeData:
         diff_col_i = header.index("差额") + 1 
         for i in range(2, ws.max_row + 1):
             ws.cell(i, diff_col_i, "=K3-J3")
+        # 创建新表---赔偿单：差额不为0的数据
+        settle_indexs = [column_index_from_string(letter) for letter in settle_letters]
+        compensate_ws: Worksheet = None
+        row_i = 2
+        for row in ws.iter_rows(min_row=2, values_only=True):
+            settle_value = [Decimal(str(row[i-1])) for i in settle_indexs]  # 计算数据
+            balance = sum(settle_value) - Decimal(str(row[settle_col_i-2]))
+            if balance == Decimal(str(0)):
+                continue
+            if compensate_ws is None:
+                compensate_ws = self.wb.create_sheet("赔偿单")
+                for i in range(1, ws.max_column + 1):
+                    compensate_ws.cell(1, i, ws.cell(1, i).value)
+            for i, value in enumerate(row):
+                compensate_ws.cell(row_i, i+1, value)
+            row_i += 1
+        if compensate_ws is not None:
+            self.add_total_row(compensate_ws)
+        # 创建新表---客单价：订单子类型为即时单
+        value_i = header.index("订单子类型")
+        custom_ws: Worksheet = None
+        row_i = 2
+        for row in ws.iter_rows(min_row=2, values_only=True):
+            if row[value_i] != "即时单":
+                continue
+            if custom_ws is None:
+                custom_ws = self.wb.create_sheet("客单价")
+                for i in range(1, ws.max_column + 1):
+                    value = ws.cell(1, i).value
+                    custom_ws.cell(1, i, value)
+            for i, value in enumerate(row):
+                custom_ws.cell(row_i, i+1, value)
+            row_i += 1
+        if custom_ws is not None:
+            self.add_total_row(custom_ws)
         # 最后一行新增合计数
         self.add_total_row(ws) 
         sum_row_i = ws.max_row + 1
@@ -1195,47 +1267,16 @@ class ElemeData:
             range_end = f"{col_str}{sum_row_i - 1}"
             ws.cell(sum_row_i, i, f"=SUM({range_start}:{range_end})")    
             ws.column_dimensions[col_str].width = 12
-        # 新增分表-赔偿单: 计算差额并复制差额不为0的数据
-        compensate_data = []
-        settle_indexs = [column_index_from_string(letter) for letter in settle_letters]
-        for row in ws.iter_rows(min_row=2, values_only=True):
-            settle_value = [Decimal(str(row[i-1])) for i in settle_indexs]  # 计算数据
-            balance = sum(settle_value) - Decimal(str(row[settle_col_i-2]))
-            if balance == Decimal(str(0)):
-                continue
-            compensate_data.append(row)
-        if len(compensate_data) != 0:
-            compensate_ws = self.wb.create_sheet("赔偿单")
-            for i in range(1, ws.max_column + 1):
-                compensate_ws.cell(1, i, ws.cell(1, i).value)
-            self.add_total_row(compensate_ws)
-        # 新增分表-客单价:G列"订单子类型"中的即时单
-        average_data = []
-        order_type_index = header.index("订单子类型")
-        for row in ws.iter_rows(min_row=2, values_only=True):
-            if row[order_type_index] != "即时单":
-                continue
-            average_data.append([cell.value for cell in row])
-        if len(average_data) != 0:
-            average_ws = self.wb.create_sheet("客单价")
-            for i, row in enumerate(average_data):
-                for j, value in enumerate(row):
-                    average_ws.cell(i+1, j+1, value)
-            self.add_total_row(average_ws, formula="AVERAGE")
-    def add_total_row(self, ws: Worksheet, formula="SUM"):
-        """新增统计行
-        
-        Args:
-            ws (Worksheet): 工作表
-            formula (str, optional): 计算公式. Defaults to "SUM".
-        """
+    
+    def add_total_row(self, ws: Worksheet):
+        """新增合计行"""
         sum_row_i = ws.max_row + 1
         ws.cell(sum_row_i, 1, "合计")
         for i in range(10, ws.max_column + 1):
             col_str = get_column_letter(i)
             range_start = f"{col_str}2"
             range_end = f"{col_str}{sum_row_i - 1}"
-            ws.cell(sum_row_i, i, f"={formula}({range_start}:{range_end})")    
+            ws.cell(sum_row_i, i, f"=SUM({range_start}:{range_end})")    
 
 class DaDaAutotrophy:
     """达达门店订单明细的处理"""
@@ -1415,16 +1456,16 @@ class TalkOutData:
         ws = self.wb[f"{GOL.last_month.year}年饿了么"]
         row_i = [str(ws.cell(i, 1).value) for i in range(4, 16)]
         row_i = row_i.index(GOL.last_month.strftime("%y.%m")) + 4
-        ws.cell(row_i, 2, should_income)  # 应收
-        ws.cell(row_i, 3, service_cost)  # 抽佣服务费
-        ws.cell(row_i, 4, time_raise)  # 时段加价
-        ws.cell(row_i, 5, distance_raise)  # 距离加价
-        ws.cell(row_i, 6, price_raise)  # 价格加价
-        ws.cell(row_i, 7, activty_subsidy)  # 商户承担活动
-        ws.cell(row_i, 8, chargeback)  # 部分退单-申请退单金额
-        ws.cell(row_i, 9, other)  # 其他(商家自行配送补贴)
-        ws.cell(row_i, 10, eat_now_pay_later)  # 先享后付服务费
-        ws.cell(row_i, 12, insurance)  # 保险费
+        ws.cell(row_i, 2, should_income)  
+        ws.cell(row_i, 3, service_cost)  
+        ws.cell(row_i, 4, time_raise)  
+        ws.cell(row_i, 5, distance_raise)  
+        ws.cell(row_i, 6, price_raise)  
+        ws.cell(row_i, 7, activty_subsidy)  
+        ws.cell(row_i, 8, chargeback)  
+        ws.cell(row_i, 9, other)  
+        ws.cell(row_i, 10, eat_now_pay_later)
+        ws.cell(row_i, 12, insurance) 
 
     def collect_autotrophy(self):
         """汇总自营外卖的数据"""
@@ -1598,10 +1639,9 @@ def list_generate(indexs, values):
         yield values[i]
 
 def copy_folder(src_folder, dst_folder):
-    print("备份网站数据到备份文件夹")
+    """备份网站数据到备份文件夹"""
     if os.path.exists(dst_folder):
         shutil.rmtree(dst_folder)
-    os.makedirs(dst_folder)
     shutil.copytree(src_folder, dst_folder, dirs_exist_ok=True)
 
 
@@ -1609,33 +1649,49 @@ def crawler_main(chrome_path, driver_path, download_path, user_path):
     """网站抓取的主方法"""
     print("启动浏览器，开始爬虫抓取")
     driver = init_chrome(chrome_path, driver_path, download_path, user_path)
+    all_download = False
     meituan = MeiTuanCrawler(driver, download_path)
-    print("登录并打开美团网站")
-    meituan.login()
-    print("切换店铺")
-    meituan.toggle_store(GOL.store_name)
-    time.sleep(3)
-    print("下载综合营业统计表")
-    meituan.download_synthesize_operate()
-    print("下载自营外卖/自提订单明细表")
-    meituan.download_autotrophy()
-    print("下载综合收款统计表的数据")
-    meituan.download_synthesize_income()
-    print("下载支付结算表的相关数据")
-    meituan.download_pay_settlement()
-    print("下载支付明细表的相关数据")
-    meituan.download_pay_detail()
-    print("下载储值消费汇总表的数据")
-    meituan.download_store_consume()
-    print("下载会员新增情况统计表的相关数据")
-    meituan.download_member_addition()
-    print("从美团网站爬虫导出EXCEL文件已完成")
+    for path in meituan._name2save.values():
+        if os.path.exists(path):
+            continue
+        break
+    else:
+        all_download = True
+    if not all_download:
+        print("登录并打开美团网站")
+        meituan.login()
+        print("切换店铺")
+        meituan.toggle_store(GOL.store_name)
+        time.sleep(3)
+        print("下载综合营业统计表")
+        meituan.download_synthesize_operate()
+        print("下载自营外卖/自提订单明细表")
+        meituan.download_autotrophy()
+        print("下载综合收款统计表的数据")
+        meituan.download_synthesize_income()
+        print("下载支付结算表的相关数据")
+        meituan.download_pay_settlement()
+        print("下载支付明细表的相关数据")
+        meituan.download_pay_detail()
+        print("下载储值消费汇总表的数据")
+        meituan.download_store_consume()
+        print("下载会员新增情况统计表的相关数据")
+        meituan.download_member_addition()
+        print("从美团网站爬虫导出EXCEL文件已完成")
+    all_download = False
     dada = DadaCrawler(driver, download_path)
-    print("登入并打开达达网站")
-    dada.login()
-    print("下载门店明细报表")
-    dada.download_store_report()
-    print("从达达网站爬虫导出EXCEL文件已完成")
+    for path in dada._name2save.values():
+        if os.path.exists(path):
+            continue
+        break
+    else:
+        all_download = True
+    if not all_download:
+        print("登入并打开达达网站")
+        dada.login()
+        print("下载门店明细报表")
+        dada.download_store_report()
+        print("从达达网站爬虫导出EXCEL文件已完成")
     driver.quit()
 
 def operation_detail_main(template_path):
@@ -1658,7 +1714,7 @@ def operation_detail_main(template_path):
 
 
 def eleme_main():
-    """饿了么表格处理:《账单明细》"""
+    """饿了么数据的表格《账单明细》处理的主方法"""
     eleme_data = ElemeData()
     print("处理分表-账单汇总")
     eleme_data.billing_summary()
@@ -1666,8 +1722,8 @@ def eleme_main():
     eleme_data.take_out()
     print("删除不保留的分表")
     eleme_data.del_useless_sheet()
-    print("调整所有表格的格式")
-    eleme_data.adjust_all_style()
+    print("调整整个表格的字体大小")
+    eleme_data.adjust_font_size()
     print("保存文件")
     eleme_data.save()
     print("饿了么数据的留存表已整理完毕")
@@ -1698,9 +1754,9 @@ def meituan_autotrophy_main():
 
 
 def take_out_main():
-    """饿了么表格数据处理:《外卖收入汇总表》"""
+    """外卖收入汇总表的主方法"""
     take_out = TalkOutData()
-    print("从《账单明细》文档中获取数据:")
+    print("汇总饿了么的数据")
     take_out.collect_eleme()
     print("汇总自营外卖的数据")
     take_out.collect_autotrophy()
@@ -1718,11 +1774,14 @@ def main():
     download_path = r"D:\Download"
     # 定义保存名称
     save_folder = os.path.join(os.path.dirname(operate_detail_template), "输入数据")
-    if not os.path.exists(save_folder):
-        os.makedirs(save_folder)
+    # 从断点获取数据
     backup_folder = os.path.join(os.path.dirname(operate_detail_template), "数据备份")
-    date_str = GOL.last_month.strftime("%Y%m")
+    if os.path.exists(backup_folder):
+        print(f"含有断点数据,从{backup_folder}中恢复数据")
+        shutil.rmtree(save_folder)
+        shutil.move(backup_folder, save_folder)
     # 输入文件地址, Bread（湖明店）,Bread（瑞景店）,Sweet
+    date_str = GOL.last_month.strftime("%Y%m")
     input_value_name = "&&".join(os.listdir(save_folder))
     for deal_name in TM.__dict__.values():
         if deal_name not in input_value_name:
@@ -1742,23 +1801,31 @@ def main():
         GOL.save_path.autotrophy_meituan = os.path.join(save_folder, f"{GOL.store_name}自营外卖{date_str}(美团后台).xlsx")
         GOL.save_path.autotrophy_dada = os.path.join(save_folder, f"{GOL.store_name}自营外卖{date_str}(达达).xlsx")
         if os.path.exists(GOL.save_path.operate_detail):
-            print(f"{deal_name}的营业明细表已在不跑第二遍")
+            print(f"汇总表格已在不跑第二遍:{GOL.save_path.operate_detail}")
             continue
-        # 从网站上下载相关EXCEL文件
-        crawler_main(chrome_path, chrome_driver_path, download_path, user_path)
-        # 备份所有数据，作为回退处理，减少二次从网站上下载数据的情况发生
+        try:
+            # 从网站上下载相关EXCEL文件
+            crawler_main(chrome_path, chrome_driver_path, download_path, user_path)
+        except Exception:
+            print(f"数据下载失败，请手动下载后重新执行程序")
+            print(traceback.format_exc())
+            return
+        print("设置断点,避免数据处理出错后二次从网站上下载数据")
         copy_folder(save_folder, backup_folder)
-        # 汇总营业明细表
-        operation_detail_main(operate_detail_template)
-        # 饿了么表格处理:《账单明细》
-        eleme_main()  
+        # 饿了么导出数据的处理-账单明细表
+        eleme_main()
         # 自营外卖(美团后台)表处理
         meituan_autotrophy_main()
         # 自营外卖(达达)表处理
         dada_autotrophy_main()
-        # 饿了么表格数据处理:《外卖收入汇总表》
-        take_out_main()  
-
+        # 汇总外卖收入表
+        take_out_main()
+        # 汇总营业明细表
+        operation_detail_main(operate_detail_template)
+        # 删除断点数据
+        print("删除断点数据")
+        shutil.rmtree(backup_folder)
+    print("数据处理完成")
 
 if __name__ == "__main__":
     main()

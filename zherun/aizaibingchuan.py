@@ -153,20 +153,19 @@ async def main():
         for time_str, data_id in tqdm(all_posts.items(), desc="博客提取中"):
             each_url = f"https://xueqiu.com/4104161666/{data_id}"
             page = await browser.get(each_url)
-            wait_time = random.uniform(4, 10) 
+            wait_time = random.uniform(1, 5) 
             await asyncio.sleep(wait_time)
             # 等待帖子列表容器出现（根据实际情况调整选择器）
             try:
                 await robust_wait_for(page, '.article__bd__detail', timeout=60)
                 detail_ele = await page.query_selector(".article__bd__detail")
                 content = detail_ele.text_all
-                if "量化" not in content:
-                    continue
-                f.writelines([
-                    f"**时间:{time_str}\n",
-                    f"**内容:{content}\n",
-                ])
-                f.write(f"{'-' * 100}\n")
+                if "量化" in content:
+                    f.writelines([
+                        f"**时间:{time_str}\n",
+                        f"**内容:{content}\n",
+                    ])
+                    f.write(f"{'-' * 100}\n")
                 already_key.append(time_str)
             except Exception as e:
                 print(f"博客内容提取失败: {e}")
