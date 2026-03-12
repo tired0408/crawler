@@ -86,8 +86,9 @@ class XueQiuCrawler:
                     print("数据时间已超过两年前，结束爬取")
                     return
                 # 通过...判断是否是全部内容,如果是,进一步判断是否含有量化,没有跳过
-                content_description_ele = await post.query_selector('.content--description')
-                content_description = content_description_ele.text_all
+                content_description:str = await self.get_content_description(post)
+                if content_description is None:
+                    continue
                 if "// @" in content_description:
                     content_description = content_description.split("// @")[0]
                 # 处理回复的博客内容
@@ -115,7 +116,17 @@ class XueQiuCrawler:
             await self.wait_content_load(old_id)
             TmpData.page_index += 1
             continue
-
+    
+    async def get_content_description(self, post: Element):
+        """获取帖子的内容描述"""
+        ele = await post.query_selector('.content--description')
+        if ele is not None:
+            return ele.text_all
+        ele = await post.query_selector(".video_box")
+        if ele is not None:
+            return None
+        raise Exception("未知的博客类型")
+        
     async def post_new_tab(self, post: Element):
         """点击进入新标签页的帖子数据"""
         data_id = await post.query_selector('a[data-id]')
