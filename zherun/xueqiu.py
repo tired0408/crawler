@@ -13,67 +13,18 @@ from datetime import datetime, timedelta
 from nodriver.core.tab import Tab
 from nodriver.core.browser import Browser
 
-
-class FileReader:
-    _path: str = "default.txt"
-
-    @classmethod
-    def initialize(cls, path):
-        cls._path = path
-
-    @classmethod
-    def save(cls, time_str, content):
-        """保存数据:追加模式"""
-        with open(cls._path, 'a', encoding='utf-8') as f:
-            f.writelines([f"**时间:{time_str}\n", f"**内容:{content}\n", f"{'-' * 100}\n"])
-
-class TmpData:
-    _path = "tmp_data.json"
-    page_index = 1
-    start_date = None
-    end_date = None
-
-    @classmethod
-    def load(cls):
-        """加载断点数据"""
-        if not os.path.exists(cls._path):
-            return
-        with open(cls._path, "r") as f:
-            cache = json.load(f)
-            cls.page_index = cache[0]
-            cls.start_date = datetime.strptime(cache[1], "%Y-%m-%d %H:%M")
-            cls.end_date = datetime.strptime(cache[2], "%Y-%m-%d %H:%M")
-            
-        
-    @classmethod
-    def save(cls):
-        """缓存断点数据"""
-        save_data = [
-            cls.page_index,
-            datetime.strftime(cls.start_date, "%Y-%m-%d %H:%M"),
-            datetime.strftime(cls.end_date, "%Y-%m-%d %H:%M"),
-        ]
-        with open(cls._path, "w", ) as f:
-            json.dump(save_data, f, indent=2)
-
-    @classmethod
-    def delete(cls):
-        """删除断点数据"""
-        if os.path.exists(cls._path):
-            os.remove(cls._path)
-
 class XueQiuCrawler:
 
     def __init__(self):
         # 用户自定义配置
         self.user_path = r'C:\Users\Administrator\AppData\Local\Google\Chrome\User Data'
         self.chrome_path = r"E:\py-workspace\crawler\chromedriver_mac_arm64_114\chrome114\App\Chrome-bin\chrome.exe"
-        self.person_id = "3203289965"  # 6157001146, 4185949384
+        self.person_id = "6157001146"  # , 4185949384
         self.url = f'https://xueqiu.com/u/{self.person_id}'
         self.detail_base_url = f"https://xueqiu.com/{self.person_id}"
-        FileReader.initialize("charles_capital.txt")  #zaikan, hexinluoji
+        FileReader.initialize("zaikan.txt")  #zaikan, hexinluoji
         TmpData.start_date = None
-        TmpData.end_date = datetime(year=2025, month=1, day=1)
+        TmpData.end_date = datetime(year=2024, month=1, day=1)
         # 程序缓存数据
         self.browser: Browser = None
         self.page: Tab = None
@@ -145,11 +96,9 @@ class XueQiuCrawler:
                 elif "展开 \ue63c" in content_description:
                     content_description = await self.post_expand(post)
                     self.judge_and_save(data_id, time_value, content_description)
-                elif "网页链接" in content_description:
+                else:
                     content_description = await self.post_new_tab(post)
                     self.judge_and_save(data_id, time_value, content_description)
-                else:
-                    raise Exception("未定义的博客内容爬取方法")
                 TmpData.start_date = time_value
             print(f"第{TmpData.page_index}页抓取完毕,跳转下一页")
             old_id = await self.first_post_id()
@@ -196,7 +145,6 @@ class XueQiuCrawler:
         while asyncio.get_event_loop().time() - start < timeout:
             await self.refresh_browser_tabs()
             if tab not in self.browser.tabs:
-                print("新标签页已关闭")
                 return
             await asyncio.sleep(poll_interval)
         raise Exception(f"新标签页关闭超时，当前标签页数量: {len(self.browser.tabs)}")
@@ -375,6 +323,55 @@ class XueQiuCrawler:
         time_str = time_value.strftime("%Y-%m-%d %H:%M")
         content = f"({self.detail_base_url}/{data_id}){value}"
         FileReader.save(time_str, content)
+
+class FileReader:
+    _path: str = "default.txt"
+
+    @classmethod
+    def initialize(cls, path):
+        cls._path = path
+
+    @classmethod
+    def save(cls, time_str, content):
+        """保存数据:追加模式"""
+        with open(cls._path, 'a', encoding='utf-8') as f:
+            f.writelines([f"**时间:{time_str}\n", f"**内容:{content}\n", f"{'-' * 100}\n"])
+
+class TmpData:
+    _path = "tmp_data.json"
+    page_index = 1
+    start_date = None
+    end_date = None
+
+    @classmethod
+    def load(cls):
+        """加载断点数据"""
+        if not os.path.exists(cls._path):
+            return
+        with open(cls._path, "r") as f:
+            cache = json.load(f)
+            cls.page_index = cache[0]
+            cls.start_date = datetime.strptime(cache[1], "%Y-%m-%d %H:%M")
+            cls.end_date = datetime.strptime(cache[2], "%Y-%m-%d %H:%M")
+            
+        
+    @classmethod
+    def save(cls):
+        """缓存断点数据"""
+        save_data = [
+            cls.page_index,
+            datetime.strftime(cls.start_date, "%Y-%m-%d %H:%M"),
+            datetime.strftime(cls.end_date, "%Y-%m-%d %H:%M"),
+        ]
+        with open(cls._path, "w", ) as f:
+            json.dump(save_data, f, indent=2)
+
+    @classmethod
+    def delete(cls):
+        """删除断点数据"""
+        if os.path.exists(cls._path):
+            os.remove(cls._path)
+
 
 if __name__ == '__main__':
     # 由于 asyncio.run() 在某些环境下可能有问题，官方推荐使用 loop().run_until_complete()
