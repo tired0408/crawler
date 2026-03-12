@@ -2,6 +2,7 @@ import re
 import os
 import time
 import json
+import traceback
 import random
 import asyncio
 import nodriver as uc
@@ -104,9 +105,10 @@ class XueQiuCrawler:
         print("开始抓取帖子数据")
         try:
             await self.loop_page()
-        except Exception as e:
-            print(f"博客数据提取失败: {e}")
-            await self.page.save_screenshot('error.png')
+        except Exception:
+            print(f"博客数据提取失败:")
+            print(traceback.format_exc())
+            await self.safe_save_screenshot('error.png')
             print("缓存断点数据")
             TmpData.save()
         else:
@@ -143,11 +145,12 @@ class XueQiuCrawler:
                 elif "展开 \ue63c" in content_description:
                     content_description = await self.post_expand(post)
                     self.judge_and_save(data_id, time_value, content_description)
-                else:
+                elif "网页链接" in content_description:
                     content_description = await self.post_new_tab(post)
                     self.judge_and_save(data_id, time_value, content_description)
+                else:
+                    raise Exception("未定义的博客内容爬取方法")
                 TmpData.start_date = time_value
-                raise Exception("test")
             print(f"第{TmpData.page_index}页抓取完毕,跳转下一页")
             old_id = await self.first_post_id()
             next_button = await self.page.query_selector('a.pagination__next')
@@ -171,25 +174,43 @@ class XueQiuCrawler:
         await data_id.click()
         st = time.time()
         while time.time() - st < 10:
-            time.sleep(0.5)
-            if len(self.browser.tabs) == 2:
+            await asyncio.sleep(0.2)
+            await self.refresh_browser_tabs()
+            if len(self.browser.tabs) >= 2:
                 break
         else:
             raise Exception("新标签页打开超时")
         await asyncio.sleep(3)
-        new_page = self.browser.tabs[1]
+        new_page = self.browser.tabs[-1]
         await self.robust_wait_for_normal(new_page, '.article__bd__detail', timeout=60)
         detail_ele = await new_page.query_selector(".article__bd__detail")
-        await new_page.close()
-        st = time.time()
-        while time.time() - st < 10:
-            time.sleep(0.5)
-            if len(self.browser.tabs) == 1:
-                break
-        else:
-            raise Exception("新标签页关闭超时")
-        await asyncio.sleep(0.5)
-        return detail_ele.text_all
+        content = detail_ele.text_all
+        await self.close_tab_and_sync(new_page, timeout=10)
+        await asyncio.sleep(2)
+        return content
+
+    async def close_tab_and_sync(self, tab: Tab, timeout=10, poll_interval=0.5):
+        """关闭 tab 并同步 browser.tabs，避免关闭后数量不变。"""
+        await tab.close()
+        start = asyncio.get_event_loop().time()
+        while asyncio.get_event_loop().time() - start < timeout:
+            await self.refresh_browser_tabs()
+            if tab not in self.browser.tabs:
+                print("新标签页已关闭")
+                return
+            await asyncio.sleep(poll_interval)
+        raise Exception(f"新标签页关闭超时，当前标签页数量: {len(self.browser.tabs)}")
+
+    async def refresh_browser_tabs(self):
+        """触发 nodriver 刷新 targets。"""
+        for method_name in ("update_targets", "get_targets", "targets"):
+            method = getattr(self.browser, method_name, None)
+            if not callable(method):
+                continue
+            result = method()
+            if asyncio.iscoroutine(result):
+                await result
+            break
 
     async def post_expand(self, post: Element):
         """含展开的帖子数据抓取"""
@@ -225,27 +246,31 @@ class XueQiuCrawler:
 
     @staticmethod
     async def robust_wait_for_normal(page: Tab, selector, timeout=60, retry_interval=0.5):
+        start = asyncio.get_event_loop().time()
+        while True:
+            try:
+                # 尝试等待，每次等待较短时间，便于及时重试
+                element = await page.wait_for(selector, timeout=5)
+                return element
+            except ProtocolException:
+                # 遇到节点失效，稍后重试
+                if asyncio.get_event_loop().time() - start > timeout:
+                    raise asyncio.TimeoutError(f"等待 '{selector}' 超时 {timeout} 秒")
+                await asyncio.sleep(retry_interval)
+            except asyncio.TimeoutError:
+                # 元素尚未出现，继续轮询
+                if asyncio.get_event_loop().time() - start > timeout:
+                    raise
+                await asyncio.sleep(retry_interval)
+
+    async def safe_save_screenshot(self, path='error.png', timeout=3):
+        """截图失败或超时时直接返回，避免卡住主流程。"""
+        if self.page is None:
+            return
         try:
-            start = asyncio.get_event_loop().time()
-            while True:
-                try:
-                    # 尝试等待，每次等待较短时间，便于及时重试
-                    element = await page.wait_for(selector, timeout=5)
-                    return element
-                except ProtocolException:
-                    # 遇到节点失效，稍后重试
-                    if asyncio.get_event_loop().time() - start > timeout:
-                        raise asyncio.TimeoutError(f"等待 '{selector}' 超时 {timeout} 秒")
-                    await asyncio.sleep(retry_interval)
-                except asyncio.TimeoutError:
-                    # 元素尚未出现，继续轮询
-                    if asyncio.get_event_loop().time() - start > timeout:
-                        raise
-                    await asyncio.sleep(retry_interval)
+            await asyncio.wait_for(self.page.save_screenshot(path), timeout=timeout)
         except Exception as e:
-            print(f"等待 '{selector}' 失败：{e}")
-            await page.save_screenshot('error.png')
-            return None
+            print(f"保存截图失败: {e}")
 
     async def first_post_id(self):
         """获取第一个帖子的ID"""
