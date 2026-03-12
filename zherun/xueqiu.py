@@ -220,10 +220,19 @@ class XueQiuCrawler:
         except Exception as e:
             print(f"保存截图失败: {e}")
 
-    async def first_post_id(self):
+    @staticmethod
+    async def call_with_timeout(coro, timeout=3):
+        """给 nodriver 调用加硬超时，避免长时间卡住。"""
+        return await asyncio.wait_for(coro, timeout=timeout)
+
+    async def first_post_id(self, timeout=3):
         """获取第一个帖子的ID"""
-        first_post = await self.page.query_selector('article.timeline__item')
-        link = await first_post.query_selector('a[data-id]')
+        link = await self.call_with_timeout(
+            self.page.query_selector('article.timeline__item a[data-id]'),
+            timeout=timeout
+        )
+        if link is None:
+            raise Exception("未找到首条帖子链接")
         old_id = link.attrs['data-id']
         return old_id
 
